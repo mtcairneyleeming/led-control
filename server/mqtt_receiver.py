@@ -1,14 +1,14 @@
 #!/usr/bin/env python2
-"""An MQTT server that receives state, wake and disconnect messages from devices and updates Redis."""
+"""An MQTT server that receives state, wake and disconnect
+messages from devices and updates Redis."""
 import json
 from flask import Flask
 from flask_redis import FlaskRedis
 from flask_mqtt import Mqtt
 from config import conf
-from device_send import send_advanced, send_simple
 
 app = Flask(__name__)
-# use the free broker from HIVEMQ
+# use mosquitto on the local machine
 app.config['MQTT_BROKER_URL'] = conf.mqtt_hostname
 # default port for non-tls connection
 app.config['MQTT_BROKER_PORT'] = conf.mqtt_port
@@ -37,8 +37,8 @@ def getGroupKey(Id):
 
 def format_list(keys, states, led_descriptor="state"):
     output = []
-    for i in range(len(states)):
-        output.append({'id': keys[i], led_descriptor: json.loads(states[i])})
+    for i, state in enumerate(states):
+        output.append({'id': keys[i], led_descriptor: json.loads(state)})
     return output
 
 
