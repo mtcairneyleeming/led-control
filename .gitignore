@@ -99,3 +99,9 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# old versions of server
+server/old
+
+# VS Code
+.vscode
