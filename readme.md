@@ -7,22 +7,36 @@
  
 ## Database design
 
-### Device records (stored in REDIS as JSON strings under keys: "device:[device_id]")
-1. state: "on|off|blinking"
-2. blinkInfinite?: boolean  - null if state != blinking
-3. blinkDelay?: number      - null if state != blinking
-5. blinkCount?: number      - null if state != blinking OR blinkInfinite == true 
-
-### Group records (stored in REDIS as JSON strings under keys: "group:[group_id]")
-1. id: incrementing number
-2. leds: [] // list of led ids in this group
-
-### Users table (not implemented, but would be JSON strings under "user:[user_id]")
-//1. uuid: uuid
-2. username: string
-3. password: string (protected)
-4. devices: list of device ids 
-
+### Device records 
+(stored in REDIS as JSON strings under keys: "device:[device_id]")
+```
+{
+    state: "on|off|blinking"
+    blinkInfinite?: boolean  - null if state != blinking
+    blinkDelay?: number      - null if state != blinking
+    blinkCount?: number      - null if state != blinking OR blinkInfinite == true 
+}
+```
+### Group records 
+(stored in REDIS as JSON strings under keys: "group:[group_id]")
+```
+{
+    id: incrementing number
+    leds: [] // list of led ids in this group
+    description: string, human readable for user
+}
+```
+### Users table 
+(not implemented, but would be JSON strings under "user:[user_id]")
+```
+{
+    id: uuid/incrementing number
+    username: string
+    password: string (protected)
+    devices: list of device ids
+    groups: list of group ids 
+}
+```
 ## MQTT topic design
 
 ### leds/{uuid}
