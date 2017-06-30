@@ -105,3 +105,6 @@ server/old
 
 # VS Code
 .vscode
+
+# pylint
+.pylintrc
