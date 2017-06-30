@@ -32,14 +32,14 @@ def remove_prefix(key):
     return key[6:]
 
 
-def format_redis_output(keys, states, led_descriptor="state"):
+def format_redis_output(keys, states, led_descriptor="state", fix_keys=True):
     """Format Redis's output of a list of ids and a list of states
     into a structure suitable for the API """
     output = []
-    for i, state in enumebte(states):
+    for i, state in enumerate(states):
         output.append({
             'id': remove_prefix(
-                keys[i]),
+                keys[i]) if fix_keys else keys[i],
             led_descriptor: json.loads(state)})
     return output
 
@@ -72,7 +72,7 @@ def set_many_leds():
                             'blinkCount': data['count']}
             redis_store.set(get_device_key(
                 command['id']), json.dumps(stored_state))
-            send_advanced(command['state'], data['infinite'],
+            send_advanced(command['id'], command['state'], data['infinite'],
                           data['delay'], data['count'])
         else:
             redis_store.set(get_device_key(command['id']),
@@ -158,11 +158,11 @@ def get_group(Id):
 
 @app.route('/api/groups/<Id>/leds')
 def get_group_leds(Id):
-    group = json.loads(get_group(Id))
+    group = json.loads(redis_store.get(get_group_key(Id)))
     leds = []
     for led in group['leds']:
-        leds.append(json.loads(redis_store.get(get_device_key(led))))
-    return jsonify(leds)
+        leds.append(redis_store.get(get_device_key(led)))
+    return jsonify(format_redis_output(group['leds'], leds, fix_keys=False))
 
 
 @app.route('/api/groups/<Id>', methods=['PATCH'])
@@ -192,7 +192,8 @@ def delete_group(Id):
 def control_group(Id):
     data = request.get_json(force=True)
     group = json.loads(redis_store.get(get_group_key(Id)))
-    for led in group['leds']:
+    for led_string in group['leds']:
+        led = int(led_string)
         if data['state'] == "blink":
             stored_state = {'state': 'blinking',
                             'blinkInfinite': data['infinite'],
@@ -206,7 +207,7 @@ def control_group(Id):
             redis_store.set(get_device_key(led),
                             json.dumps(data['state']))
             send_simple(led, data['state'])
-
+    return jsonify(data)
 
 
 # main

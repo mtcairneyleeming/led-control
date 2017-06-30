@@ -16,7 +16,7 @@ def send_simple(Id, state):
     """Sends a simple state: "on"|"off"|"toggle", where state is a one of those values """
     data = json.dumps({'state': state})
 
-    mqttpub.single('leds/' + Id + '/set_state_simple',
+    mqttpub.single('leds/%s/set_state_simple' % Id,
                    data, 1, False, config.mqtt_hostname, config.mqtt_port, None)
 
 
@@ -27,5 +27,5 @@ def send_advanced(Id, state, infinite, delay, blink_count):
         'delay': delay,
         'blinkCount': blink_count
     })
-    mqttpub.single('leds/' + Id + '/set_state',
+    mqttpub.single('leds/%s/set_state' % Id,
                    data, 1, False, config.mqtt_hostname, config.mqtt_port, None)
