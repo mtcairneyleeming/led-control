@@ -20,9 +20,9 @@ def send_simple(Id, state):
                    data, 1, False, config.mqtt_hostname, config.mqtt_port, None)
 
 
-def send_advanced(Id, infinite, delay, blink_count):
+def send_advanced(Id, state, infinite, delay, blink_count):
     data = json.dumps({
-        'state': 'blink',
+        'state': state,
         'infinite': "true" if infinite else "false",
         'delay': delay,
         'blinkCount': blink_count
