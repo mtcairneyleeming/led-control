@@ -249,7 +249,6 @@ Return:
 Payload: 
 ```
 {
-    id: string // of group
     state: { // to set group to 
         state: "on|off|toggle|blinking"
         if state is blinking:
@@ -262,7 +261,6 @@ Payload:
 Return:
 ```
 {
-    id: string // of group
     state: { // group is now set to 
         state: "on|off|blinking"
         if state is blinking:
