@@ -12,138 +12,149 @@ const int led = LED_BUILTIN;
 // set uuid & topics
 int uuid = ESP.getChipId();
 
+class Blinker
+{
+public:
+  bool isBlinking = false;
+  int blinkCounts = -1;
+  bool initialStatus = false;
+  int blinkDelay = 500;
+
+  Ticker blinker;
+
+  void start()
+  {
+    self.blinker.attach_ms(switchDelay, self.blinkTicker);
+  }
+  void stop()
+  {
+    self.blinker.detach();
+    // send state message
+    publishState(jsonBuffer)
+  }
+  void set(bool initialState, int blinkDelay, int blinkCount = -1)
+  {
+    // runs infinitely if repeats is set to below 0, with a ticker
+    self.blinkCounts = 2 * blinkCount + 1;
+    self.initialStatus = !initialState;
+    self.isBlinking = true;
+    self.blinkDelay = blinkDelay;
+  }
+  // blink function for Ticker
+  void blinkFunction()
+  {
+    if (blinkCounts == 0)
+    {
+      self.stop();
+    }
+    else
+    {
+      led.set(!blinkStatus);
+      self.blinkStatus = !self.blinkStatus;
+      self.blinkCounts--;
+    }
+  }
+}
+// LED class - control and state
+class LED
+{
+private:
+  int pin = LED_BUILTIN;
+
+public:
+  bool on = false;
+  void set(bool state)
+  {
+    digitalWrite(self.pin, state);
+    self.on = state;
+  }
+  void setup()
+  {
+    pinMode(led, OUTPUT);
+    self.set(false);
+  }
+}
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 StaticJsonBuffer<200> jsonBuffer;
-Ticker blinker;
-
+Blinker blinker;
+LED led;
 
 // generate topic names
-char* genTopicName(char* suffix) {
-  Serial.println("Function called");
-  char concatenator[180] = {0};
+char *genTopicName(char *suffix)
+{
+  char concatenator[80] = {0};
   sprintf(concatenator, "leds/%i/%s", uuid, suffix);
-  Serial.println(concatenator);
   return concatenator;
 }
 
-// set LED
-bool LEDCurrent = false;
-void setLED(bool stat)
+void publishState(StaticJsonBuffer buffer)
 {
-  digitalWrite(led, stat);
-  LEDCurrent = stat;
-}
-// blink LED
-int blinkCounts = 0;
-bool blinking = false;
-bool blinkStatus = false;
-int blinkDelay = 0;
-// blink function for Ticker
-void blinkTicker()
-{
-  if (blinkCounts == 0)
+  buffer.clear();
+  // create state object to send back
+  JsonObject &state = buffer.createObject();
+  if (blinker.isBlinking)
   {
-    blinker.detach();
+    // advanced state
+    state["state"] = "blinking";
+    state["blinkCount"] = blinker.blinkCounts;
+    state["delay"] = blinker.blinkDelay;
+    state["infinite"] = (blinker.blinkCounts < 0);
   }
   else
   {
-    setLED(!blinkStatus);
-    blinkStatus = !blinkStatus;
-    blinkCounts--;
+    //basic state
+    state['state'] = led.on ? "on" : "off";
   }
+  char stateBuffer[100] = {0};
+  state.printTo(stateBuffer.sizeof(stateBuffer));
+  client.publish(genTopicName("state"), stateBuffer)
 }
-// start blinker
-void blink(int repeats, int switchDelay, bool initialStatus)
-{
-  // runs infinitely if repeats is set to below 0, with a ticker
-  blinkCounts = 2 * repeats + 1;
-  blinkStatus = !initialStatus;
-  blinking = true;
-  blinkDelay = switchDelay;
-  blinker.attach_ms(switchDelay, blinkTicker);
-}
-
 
 void callback(char *Topic, byte *payload, unsigned int length)
 {
-  // log
-  Serial.print("Message arrived on topic ");
-  Serial.println(Topic);
-  // parse json
   JsonObject &data = jsonBuffer.parseObject(payload);
-  // set current status
-  // act upon data
-
-  // on/off/toggle/blink
   String state = data["state"];
-  Serial.println("New State: " + state);
-  if (state == "on") {
-    blinker.detach();
-    blinking = false;
-    setLED(false);
-  }
-  else if (state == "off") {
-    blinker.detach();
-    blinking = false;
-    setLED(true);
-  }
-  else if (state == "toggle") {
-    blinker.detach();
-    blinking = false;
-    setLED(!LEDCurrent);
-    if (LEDCurrent) {
-    } else {
-    }
-  }
-  else if (state == "blink") {
+  blinker.stop();
+  switch (state)
+  {
+  case "on":
+    led.set(false);
+    break;
+  case "off":
+    led.set(true);
+    break;
+  case "toggle":
+    led.set(!led.on);
+    break;
+  case "blink":
     if (data["infinite"] == "true")
     {
-      blink(-1, data["delay"].as<int>(), false);
-    } else {
-      blink(data["blinkCounts"].as<int>(), data["delay"].as<int>(), false);
+      blinker.set(true, data["delay"].as<int>(), -1);
+    }
+    else
+    {
+      blinker.set(true, data["delay"].as<int>(), data["blinkCounts"].as<int>());
     }
   }
-  jsonBuffer.clear();
-
-
-  // create state object to send back
-  JsonObject &newState = jsonBuffer.createObject();
-  newState["state"] = !LEDCurrent ? "on" : "off";
-  // if more advanced details are needed
-  if (blinking)
-  {
-    newState["infinite"] = (blinkCounts < 0);
-    newState["blinkCount"] = blinkCounts;
-    newState["delay"] = blinkDelay;
-  }
-  // convert to json string
-  char JSONMessageBuffer[100];
-  newState.printTo(JSONMessageBuffer, sizeof(JSONMessageBuffer));
-  // send
-  jsonBuffer.clear();
-  char* topic = genTopicName("state");
-  Serial.println(JSONMessageBuffer);
-  client.publish(topic, JSONMessageBuffer);
+  publishState(jsonBuffer);
 }
 // subscribe to topics and announce existence
-void subscribe()
+void MQTTBegin()
 {
-  char* topic_1 = genTopicName("set_state_simple");
-  Serial.println(topic_1);
-  client.subscribe(topic_1);
+  client.subscribe(genTopicName("set_state_simple"));
+  client.subscribe(genTopicName("set_state"));
+  publishState(jsonBuffer);
 
-  char* topic_2 = genTopicName("set_state");
-  client.subscribe(topic_2);
   // announce existence:
-  char* topic = "leds/manage/add";
+  char *topic = "leds/manage/add";
   char concatenator[180];
   sprintf(concatenator, "{\"uuid\": %i, \"description\": \"\"}", uuid);
   client.publish(topic, concatenator);
-
 }
 // (re)connect to the server
-void reconnect()
+void connectMQTT()
 {
   // Loop until we're reconnected
   while (!client.connected())
@@ -156,7 +167,7 @@ void reconnect()
     {
       Serial.println("connected");
       Serial.print(client.connected());
-      subscribe();
+      MQTTBegin();
     }
     else
     {
@@ -168,15 +179,8 @@ void reconnect()
     }
   }
 }
-void setup()
+void connectWifi()
 {
-  // set up LED:
-  pinMode(led, OUTPUT);
-  digitalWrite(led, HIGH);
-  // start serial for debugging
-  Serial.begin(115200);
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
   // WIFI setup
   WiFi.begin(ssid, password);
   // connect to wifi
@@ -191,17 +195,25 @@ void setup()
   Serial.println(ssid);
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+}
+void setup()
+{
+  // set up LED:
+  led.setup();
+  // start serial for debugging
+  Serial.begin(115200);
+  // set up MQTT
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback);
 
-  Serial.println("MQTT client started");
   Serial.print("UUID is ");
   Serial.println(uuid);
 }
 void loop()
 {
-
   if (!client.connected())
   {
-    reconnect();
+    connectMQTT();
   }
   client.loop();
 }
