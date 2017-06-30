@@ -36,11 +36,11 @@ def format_redis_output(keys, states, led_descriptor="state"):
     """Format Redis's output of a list of ids and a list of states
     into a structure suitable for the API """
     output = []
-    for i in enumerate(states):
+    for i, state in enumebte(states):
         output.append({
             'id': remove_prefix(
                 keys[i]),
-            led_descriptor: json.loads(states[i])})
+            led_descriptor: json.loads(state)})
     return output
 
 
@@ -103,7 +103,8 @@ def set_blink(Id):
                     'blinkDelay': data['delay'],
                     'blinkCount': data['count']}
     redis_store.set(get_device_key(Id), json.dumps(stored_state))
-    send_advanced(Id, data['infinite'], data['delay'], data['count'])
+    send_advanced(Id, data['state'], data['infinite'],
+                  data['delay'], data['count'])
     return redis_store.get(get_device_key(Id))
 
 
@@ -111,10 +112,43 @@ def set_blink(Id):
 def get_groups():
     """Get all groups with their LEDs.
     Warning: this uses KEYS, as it's simpler, but is also not recommended"""
-    keys = redis_store.keys('group:*')
-    leds = redis_store.mget(keys)
+    keys = redis_store.keys('group:*') or []
+    if len(keys) > 0:
+        leds = redis_store.mget(keys)
+    else:
+        leds = []
     full_list = format_redis_output(keys, leds, led_descriptor="data")
     return jsonify(full_list)
+
+
+@app.route('/api/groups', methods=["POST"])
+def create_group():
+    data = request.get_json()
+    with redis_store.pipeline() as pipe:
+        while 1:
+            try:
+                # put a WATCH on the key that holds our sequence value
+                pipe.watch("nextGroupId")
+                # after WATCHing, the pipeline is put into immediate execution
+                # mode until we tell it to start buffering commands again.
+                # this allows us to get the current value of our sequence
+                current_value = pipe.get('nextGroupId')
+                next_value = int(current_value) + 1
+                data["id"] = next_value
+                # now we can put the pipeline back into buffered mode with MULTI
+                pipe.multi()
+                pipe.incr("nextGroupId")
+                pipe.set(get_group_key(next_value),
+                         json.dumps(data))
+                # and finally, execute the pipeline (the set command)
+                pipe.execute()
+                # if a WatchError wasn't raised during execution, everything
+                # we just did happened atomically.
+                break
+            except redis.WatchError:
+                # another client will have created a group, so retry
+                continue
+    return jsonify(data)
 
 
 @app.route('/api/groups/<Id>')
@@ -147,34 +181,32 @@ def edit_group(Id):
     return group
 
 
-@app.route('/api/groups', method=["POST"])
-def create_group():
-    data = request.get_json()
-    with redis_store.pipeline() as pipe:
-        while 1:
-            try:
-                # put a WATCH on the key that holds our sequence value
-                pipe.watch("nextGroupId")
-                # after WATCHing, the pipeline is put into immediate execution
-                # mode until we tell it to start buffering commands again.
-                # this allows us to get the current value of our sequence
-                current_value = pipe.get('nextGroupId')
-                pipe.incr("nextGroupId")
+@app.route('/api/groups/<Id>', methods=['DELETE'])
+def delete_group(Id):
+    no_of_records_deleted = redis_store.delete(get_group_key(Id))
+    return_value = True if no_of_records_deleted == 1 else False
+    return jsonify({"success": return_value})
 
-                next_value = int(current_value) + 1
-                data["'id"] = next_value
-                # now we can put the pipeline back into buffered mode with MULTI
-                pipe.multi()
-                pipe.set(get_group_key(next_value),
-                         json.dumps(data))
-                # and finally, execute the pipeline (the set command)
-                pipe.execute()
-                # if a WatchError wasn't raised during execution, everything
-                # we just did happened atomically.
-                break
-            except FlaskRedis.WatchError:
-                # another client will have created a group, so retry
-                continue
+
+@app.route('/api/groups/<Id>', methods=['PUT'])
+def control_group(Id):
+    data = request.get_json(force=True)
+    group = json.loads(redis_store.get(get_group_key(Id)))
+    for led in group['leds']:
+        if data['state'] == "blink":
+            stored_state = {'state': 'blinking',
+                            'blinkInfinite': data['infinite'],
+                            'blinkDelay': data['delay'],
+                            'blinkCount': data['count']}
+            redis_store.set(get_device_key(
+                led), json.dumps(stored_state))
+            send_advanced(led, data['state'], data['infinite'],
+                          data['delay'], data['count'])
+        else:
+            redis_store.set(get_device_key(led),
+                            json.dumps(data['state']))
+            send_simple(led, data['state'])
+
 
 
 # main
